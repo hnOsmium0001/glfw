@@ -785,6 +785,7 @@ struct _GLFWlibrary
     int                 monitorCount;
 
     _GLFWkeyboard**     keyboards;
+    _GLFWkeyboard*      lastActiveKeyboard;
     int                 keyboardCount;
 
     GLFWbool            joysticksInitialized;

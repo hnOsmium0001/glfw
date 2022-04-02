@@ -1838,7 +1838,7 @@ typedef void (* GLFWscrollfun)(GLFWwindow* window, double xoffset, double yoffse
  *
  *  @ingroup input
  */
-typedef void (* GLFWkeyfun)(GLFWwindow* window, GLFWkeyboard* keyboard, int key, int scancode, int action, int mods);
+typedef void (* GLFWkeyfun)(GLFWwindow* window, int key, int scancode, int action, int mods);
 
 /*! @brief The function pointer type for Unicode character callbacks.
  *
@@ -4657,6 +4657,8 @@ GLFWAPI const char* glfwGetKeyboardName(GLFWkeyboard* keyboard);
 GLFWAPI void glfwSetKeyboardUserPointer(GLFWkeyboard* keyboard, void* pointer);
 
 GLFWAPI void* glfwGetKeyboardUserPointer(GLFWkeyboard* keyboard);
+
+GLFWAPI GLFWkeyboard* glfwGetLastActiveKeyboard(void);
 
 /*! @brief Returns the layout-specific name of the specified printable key.
  *

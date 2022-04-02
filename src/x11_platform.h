@@ -854,7 +854,6 @@ typedef struct _GLFWlibraryX11
         PFN_XISelectEvents SelectEvents;
         PFN_XIQueryDevice QueryDevice;
         PFN_XIFreeDeviceInfo FreeDeviceInfo;
-        unsigned char eventMask[XIMaskLen(XI_LASTEVENT)];
     } xi;
 
     struct {
@@ -906,7 +905,6 @@ typedef struct _GLFWcursorX11
 typedef struct _GLFWkeyboardX11
 {
     int deviceid;
-    int enabled; // TODO(hnosm) is this field really useful?
 } _GLFWkeyboardX11;
 
 
@@ -950,8 +948,6 @@ void _glfwSetWindowMousePassthroughX11(_GLFWwindow* window, GLFWbool enabled);
 
 void _glfwSetRawMouseMotionX11(_GLFWwindow *window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedX11(void);
-
-void _glfwUpdateXIEventMaskX11(void);
 
 void _glfwPollKeyboardsX11(void);
 GLFWbool _glfwKeyboardsSupportedX11(void);

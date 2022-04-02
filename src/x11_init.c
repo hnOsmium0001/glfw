@@ -657,12 +657,6 @@ static GLFWbool initExtensions(void)
                                &_glfw.x11.xi.minor) == Success)
             {
                 _glfw.x11.xi.available = GLFW_TRUE;
-
-                memset(_glfw.x11.xi.eventMask, 0, sizeof(_glfw.x11.xi.eventMask));
-                XISetMask(_glfw.x11.xi.eventMask, XI_KeyPress);
-                XISetMask(_glfw.x11.xi.eventMask, XI_KeyRelease);
-                XISetMask(_glfw.x11.xi.eventMask, XI_HierarchyChanged);
-                _glfwUpdateXIEventMaskX11();
             }
         }
     }
@@ -1555,6 +1549,20 @@ int _glfwInitX11(void)
                                        NULL);
     }
 
+    if (_glfw.x11.xi.available)
+    {
+        unsigned char mask[XIMaskLen(XI_LASTEVENT)] = { 0 };
+        XISetMask(mask, XI_HierarchyChanged);
+
+        XIEventMask em;
+        em.deviceid = XIAllDevices;
+        em.mask_len = sizeof(mask);
+        em.mask = mask;
+
+        XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
+        XSync(_glfw.x11.display, False);
+    }
+
     _glfwPollMonitorsX11();
     _glfwPollKeyboardsX11();
     return GLFW_TRUE;
@@ -1659,4 +1667,3 @@ void _glfwTerminateX11(void)
         close(_glfw.x11.emptyEventPipe[1]);
     }
 }
-

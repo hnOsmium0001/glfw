@@ -332,8 +332,9 @@ void _glfwInputKey(_GLFWwindow* window, _GLFWkeyboard* keyboard, int key, int sc
     if (!window->lockKeyMods)
         mods &= ~(GLFW_MOD_CAPS_LOCK | GLFW_MOD_NUM_LOCK);
 
+    _glfw.lastActiveKeyboard = keyboard;
     if (window->callbacks.key)
-        window->callbacks.key((GLFWwindow*) window, (GLFWkeyboard*) keyboard, key, scancode, action, mods);
+        window->callbacks.key((GLFWwindow*) window, key, scancode, action, mods);
 }
 
 // Notifies shared code of a Unicode codepoint input event
@@ -469,7 +470,6 @@ _GLFWkeyboard* _glfwAllocKeyboard(const char *name)
 
 void _glfwFreeKeyboard(_GLFWkeyboard *keyboard)
 {
-    _glfw_free(keyboard->name);
     _glfw_free(keyboard);
 }
 
@@ -735,6 +735,12 @@ GLFWAPI void* glfwGetKeyboardUserPointer(GLFWkeyboard* handle)
 
     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
     return keyboard->userPointer;
+}
+
+GLFWAPI GLFWkeyboard* glfwGetLastActiveKeyboard(void)
+{
+    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+    return (GLFWkeyboard*) _glfw.lastActiveKeyboard;
 }
 
 GLFWAPI const char* glfwGetKeyName(int key, int scancode)

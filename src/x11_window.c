@@ -531,16 +531,29 @@ static void updateCursorImage(_GLFWwindow* window)
 //
 static void enableRawMouseMotion(_GLFWwindow* window)
 {
-    XISetMask(_glfw.x11.xi.eventMask, XI_RawMotion);
-    _glfwUpdateXIEventMaskX11();
+    XIEventMask em;
+    unsigned char mask[XIMaskLen(XI_RawMotion)] = { 0 };
+
+    em.deviceid = XIAllMasterDevices;
+    em.mask_len = sizeof(mask);
+    em.mask = mask;
+    XISetMask(mask, XI_RawMotion);
+
+    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
 }
 
 // Disable XI2 raw mouse motion events
 //
 static void disableRawMouseMotion(_GLFWwindow* window)
 {
-    XIClearMask(_glfw.x11.xi.eventMask, XI_RawMotion);
-    _glfwUpdateXIEventMaskX11();
+    XIEventMask em;
+    unsigned char mask[] = { 0 };
+
+    em.deviceid = XIAllMasterDevices;
+    em.mask_len = sizeof(mask);
+    em.mask = mask;
+
+    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
 }
 
 // Apply disabled cursor mode to a focused window
@@ -763,6 +776,21 @@ static GLFWbool createNativeWindow(_GLFWwindow* window,
         XChangeProperty(_glfw.x11.display, window->x11.handle,
                         _glfw.x11.XdndAware, XA_ATOM, 32,
                         PropModeReplace, (unsigned char*) &version, 1);
+    }
+
+    if (_glfw.x11.xi.available)
+    {
+        unsigned char mask[XIMaskLen(XI_LASTEVENT)] = { 0 };
+        XISetMask(mask, XI_KeyPress);
+        XISetMask(mask, XI_KeyRelease);
+
+        XIEventMask em;
+        em.deviceid = XIAllDevices;
+        em.mask_len = sizeof(mask);
+        em.mask = mask;
+
+        XISelectEvents(_glfw.x11.display, window->x11.handle, &em, 1);
+        XSync(_glfw.x11.display, False);
     }
 
     if (_glfw.x11.im)
@@ -1177,33 +1205,12 @@ static void processEvent(XEvent *event)
         }
     }
 
-    if (event->type == SelectionClear)
-    {
-        handleSelectionClear(event);
-        return;
-    }
-    else if (event->type == SelectionRequest)
-    {
-        handleSelectionRequest(event);
-        return;
-    }
-
-    _GLFWwindow* window = NULL;
-    if (XFindContext(_glfw.x11.display,
-                     event->xany.window,
-                     _glfw.x11.context,
-                     (XPointer*) &window) != 0)
-    {
-        // This is an event for a window that has already been destroyed
-        return;
-    }
-
     if (event->type == GenericEvent)
     {
         if (_glfw.x11.xi.available &&
             event->xcookie.extension == _glfw.x11.xi.majorOpcode)
         {
-            if (XGetEventData(_glfw.x11.display, &event->xcookie))
+            if (!XGetEventData(_glfw.x11.display, &event->xcookie))
                 goto fail;
 
             switch (event->xcookie.evtype)
@@ -1212,6 +1219,15 @@ static void processEvent(XEvent *event)
                 {
                     XIDeviceEvent* de = event->xcookie.data;
                     Bool repeat = de->flags & XIKeyRepeat;
+
+                    _GLFWwindow* window = NULL;
+                    if (XFindContext(_glfw.x11.display,
+                                    de->event,
+                                    _glfw.x11.context,
+                                    (XPointer*) &window) != 0)
+                    {
+                        break;
+                    }
 
                     const int key = translateKey(de->detail);
                     const int mods = translateXI2Mods(&de->mods);
@@ -1228,6 +1244,15 @@ static void processEvent(XEvent *event)
                 {
                     XIDeviceEvent* de = event->xcookie.data;
 
+                    _GLFWwindow* window = NULL;
+                    if (XFindContext(_glfw.x11.display,
+                                    de->event,
+                                    _glfw.x11.context,
+                                    (XPointer*) &window) != 0)
+                    {
+                        break;
+                    }
+
                     const int key = translateKey(de->detail);
                     const int mods = translateXI2Mods(&de->mods);
 
@@ -1240,14 +1265,34 @@ static void processEvent(XEvent *event)
                 case XI_HierarchyChanged:
                 {
                     XIHierarchyEvent* he = event->xcookie.data;
-                    for (int i = 0;  i < he->num_info;  i++)
+                    for (int i = 0;  i < he->num_info;  i++) 
                     { 
                         XIHierarchyInfo* info = he->info + i;
-                        if (info->use != XISlaveKeyboard)
-                            continue;
 
-                        // Whenever a new keyboard is plugged in, for each device it generates there will be a XISlaveAdded event followed by a XIDeviceEnabled event,
-                        // we only check the former because devices may also be enabled/disabled during its lifetime.
+                        // Whenever a new device is created, we will first recieved an event with:
+                        //     device use: XIFloatingSlave
+                        //     flags: XISlaveAdded
+                        // If the device is connected to the master keyboard and thereby enabled, another event will proceed:
+                        //     device use: XISlaveKeyboard|Pointer
+                        //     flags: XIDeviceEnabled
+
+                        // Whenever a device is removed, we will receive the event:
+                        //     device use: 0 (NOTE: there is no such #define in XI2.h)
+                        //     flags: XISlaveRemoved
+                        // If the device was preivously enabled, this event will PRECEED the above event:
+                        //     device use: XISlaveKeyboard|Pointer
+                        //     flags: XIDeviceDisabled
+
+                        // NOTE: The above is not clearly documented in the manpages, but instead observed when plugging in a keyboard.
+                        //       As the result, we also check for flag combinations that hasn't been observed yet, but is possible, marked with "Defensive".
+
+                        if (info->use != 0 &&
+                            info->use != XIFloatingSlave &&
+                            info->use != XISlaveKeyboard /* Defensive */)
+                        {
+                            continue;
+                        }
+
                         if (info->flags & XISlaveAdded)
                         {
                             int deviceCount;
@@ -1256,27 +1301,16 @@ static void processEvent(XEvent *event)
                             _GLFWkeyboard* keyboard = _glfwAllocKeyboard(device->name);
 
                             keyboard->x11.deviceid = device->deviceid;
-                            keyboard->x11.enabled = device->enabled;
 
                             _glfwInputKeyboard(keyboard, GLFW_CONNECTED, _GLFW_INSERT_LAST);
 
                             XIFreeDeviceInfo(device);
                         }
-                        // Similarly, when a keyboard is removed, a XIDeviceDisabled event is followed by a XISlaveRemoved event.
                         if (info->flags & XISlaveRemoved)
                         {
                             _glfwInputKeyboard(_glfwGetKeyboardFromDeviceIdX11(info->deviceid),
                                             GLFW_DISCONNECTED,
                                             _GLFW_INSERT_LAST);
-                        }
-
-                        if (info->flags & XIDeviceEnabled)
-                        {
-                            _glfwGetKeyboardFromDeviceIdX11(info->deviceid)->x11.enabled = GLFW_TRUE;
-                        }
-                        if (info->flags & XIDeviceDisabled)
-                        {
-                            _glfwGetKeyboardFromDeviceIdX11(info->deviceid)->x11.enabled = GLFW_FALSE;
                         }
                     }
 
@@ -1316,6 +1350,27 @@ static void processEvent(XEvent *event)
         fail:
             XFreeEventData(_glfw.x11.display, &event->xcookie);
         }
+        return;
+    }
+
+    if (event->type == SelectionClear)
+    {
+        handleSelectionClear(event);
+        return;
+    }
+    else if (event->type == SelectionRequest)
+    {
+        handleSelectionRequest(event);
+        return;
+    }
+
+    _GLFWwindow* window = NULL;
+    if (XFindContext(_glfw.x11.display,
+                     event->xany.window,
+                     _glfw.x11.context,
+                     (XPointer*) &window) != 0)
+    {
+        // This is an event for a window that has already been destroyed
         return;
     }
 
@@ -2857,16 +2912,6 @@ void _glfwSetRawMouseMotionX11(_GLFWwindow *window, GLFWbool enabled)
 GLFWbool _glfwRawMouseMotionSupportedX11(void)
 {
     return _glfw.x11.xi.available;
-}
-
-void _glfwUpdateXIEventMaskX11(void)
-{
-    XIEventMask em;
-    em.deviceid = XIAllMasterDevices;
-    em.mask_len = sizeof(_glfw.x11.xi.eventMask);
-    em.mask = _glfw.x11.xi.eventMask;
-
-    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
 }
 
 void _glfwPollKeyboardsX11(void)

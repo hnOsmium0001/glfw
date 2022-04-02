@@ -402,10 +402,13 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     Slot* slot = glfwGetWindowUserPointer(window);
     const char* name = glfwGetKeyName(key, scancode);
 
+    GLFWkeyboard* keyboard = glfwGetLastActiveKeyboard();
+
     if (name)
     {
-        printf("%08x to %i at %0.3f: Key 0x%04x Scancode 0x%04x (%s) (%s) (with%s) was %s\n",
+        printf("%08x to %i at %0.3f: Key 0x%04x Scancode 0x%04x Keyboard %s (%s) (%s) (with%s) was %s\n",
                counter++, slot->number, glfwGetTime(), key, scancode,
+               keyboard ? glfwGetKeyboardName(keyboard) : "NULL",
                get_key_name(key),
                name,
                get_mods_name(mods),
@@ -413,8 +416,9 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     }
     else
     {
-        printf("%08x to %i at %0.3f: Key 0x%04x Scancode 0x%04x (%s) (with%s) was %s\n",
+        printf("%08x to %i at %0.3f: Key 0x%04x Scancode 0x%04x Keyboard %s (%s) (with%s) was %s\n",
                counter++, slot->number, glfwGetTime(), key, scancode,
+               keyboard ? glfwGetKeyboardName(keyboard) : "NULL",
                get_key_name(key),
                get_mods_name(mods),
                get_action_name(action));
@@ -493,6 +497,22 @@ static void monitor_callback(GLFWmonitor* monitor, int event)
     }
 }
 
+static void keyboard_callback(GLFWkeyboard* keyboard, int event)
+{
+    if (event == GLFW_CONNECTED)
+    {
+        printf("%08x at %0.3f: Keyboard %s was connected\n",
+                counter++, glfwGetTime(),
+                glfwGetKeyboardName(keyboard));
+    }
+    else if (event == GLFW_DISCONNECTED)
+    {
+        printf("%08x at %0.3f: Keyboard %s was disconnected\n",
+                counter++, glfwGetTime(),
+                glfwGetKeyboardName(keyboard));
+    }
+}
+
 static void joystick_callback(int jid, int event)
 {
     if (event == GLFW_CONNECTED)
@@ -546,6 +566,7 @@ int main(int argc, char** argv)
     printf("Library initialized\n");
 
     glfwSetMonitorCallback(monitor_callback);
+    glfwSetKeyboardCallback(keyboard_callback);
     glfwSetJoystickCallback(joystick_callback);
 
     while ((ch = getopt(argc, argv, "hfn:")) != -1)
