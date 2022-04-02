@@ -72,6 +72,7 @@ typedef struct _GLFWplatform    _GLFWplatform;
 typedef struct _GLFWlibrary     _GLFWlibrary;
 typedef struct _GLFWmonitor     _GLFWmonitor;
 typedef struct _GLFWcursor      _GLFWcursor;
+typedef struct _GLFWkeyboard    _GLFWkeyboard;
 typedef struct _GLFWmapelement  _GLFWmapelement;
 typedef struct _GLFWmapping     _GLFWmapping;
 typedef struct _GLFWjoystick    _GLFWjoystick;
@@ -610,6 +611,14 @@ struct _GLFWcursor
     GLFW_PLATFORM_CURSOR_STATE
 };
 
+struct _GLFWkeyboard
+{
+    char            name[128];
+    void*           userPointer;
+    // This is defined in platform.h
+    GLFW_PLATFORM_KEYBOARD_STATE
+};
+
 // Gamepad mapping element structure
 //
 struct _GLFWmapelement
@@ -680,6 +689,7 @@ struct _GLFWplatform
     void (*setCursorMode)(_GLFWwindow*,int);
     void (*setRawMouseMotion)(_GLFWwindow*,GLFWbool);
     GLFWbool (*rawMouseMotionSupported)(void);
+    GLFWbool (*keyboardsSupported)(void);
     int (*createCursor)(_GLFWcursor*,const GLFWimage*,int,int);
     int (*createStandardCursor)(_GLFWcursor*,int);
     void (*destroyCursor)(_GLFWcursor*);
@@ -774,6 +784,9 @@ struct _GLFWlibrary
     _GLFWmonitor**      monitors;
     int                 monitorCount;
 
+    _GLFWkeyboard**     keyboards;
+    int                 keyboardCount;
+
     GLFWbool            joysticksInitialized;
     _GLFWjoystick       joysticks[GLFW_JOYSTICK_LAST + 1];
     _GLFWmapping*       mappings;
@@ -863,6 +876,7 @@ struct _GLFWlibrary
 
     struct {
         GLFWmonitorfun  monitor;
+        GLFWkeyboardfun keyboard;
         GLFWjoystickfun joystick;
     } callbacks;
 
@@ -916,7 +930,8 @@ void _glfwInputWindowDamage(_GLFWwindow* window);
 void _glfwInputWindowCloseRequest(_GLFWwindow* window);
 void _glfwInputWindowMonitor(_GLFWwindow* window, _GLFWmonitor* monitor);
 
-void _glfwInputKey(_GLFWwindow* window,
+void _glfwInputKeyboard(_GLFWkeyboard* keyboard, int action, int placement);
+void _glfwInputKey(_GLFWwindow* window, _GLFWkeyboard* keyboard,
                    int key, int scancode, int action, int mods);
 void _glfwInputChar(_GLFWwindow* window,
                     uint32_t codepoint, int mods, GLFWbool plain);
@@ -964,6 +979,8 @@ void _glfwAllocGammaArrays(GLFWgammaramp* ramp, unsigned int size);
 void _glfwFreeGammaArrays(GLFWgammaramp* ramp);
 void _glfwSplitBPP(int bpp, int* red, int* green, int* blue);
 
+_GLFWkeyboard* _glfwAllocKeyboard(const char* name);
+void _glfwFreeKeyboard(_GLFWkeyboard* keyboard);
 void _glfwInitGamepadMappings(void);
 _GLFWjoystick* _glfwAllocJoystick(const char* name,
                                   const char* guid,

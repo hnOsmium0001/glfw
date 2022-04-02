@@ -638,6 +638,10 @@ static GLFWbool initExtensions(void)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xi.handle, "XIQueryVersion");
         _glfw.x11.xi.SelectEvents = (PFN_XISelectEvents)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xi.handle, "XISelectEvents");
+        _glfw.x11.xi.QueryDevice = (PFN_XIQueryDevice)
+            _glfwPlatformGetModuleSymbol(_glfw.x11.xi.handle, "XIQueryDevice");
+        _glfw.x11.xi.FreeDeviceInfo = (PFN_XIFreeDeviceInfo)
+            _glfwPlatformGetModuleSymbol(_glfw.x11.xi.handle, "XIFreeDeviceInfo");
 
         if (XQueryExtension(_glfw.x11.display,
                             "XInputExtension",
@@ -653,6 +657,12 @@ static GLFWbool initExtensions(void)
                                &_glfw.x11.xi.minor) == Success)
             {
                 _glfw.x11.xi.available = GLFW_TRUE;
+
+                memset(_glfw.x11.xi.eventMask, 0, sizeof(_glfw.x11.xi.eventMask));
+                XISetMask(_glfw.x11.xi.eventMask, XI_KeyPress);
+                XISetMask(_glfw.x11.xi.eventMask, XI_KeyRelease);
+                XISetMask(_glfw.x11.xi.eventMask, XI_HierarchyChanged);
+                _glfwUpdateXIEventMaskX11();
             }
         }
     }
@@ -1171,6 +1181,7 @@ GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform)
         _glfwSetCursorModeX11,
         _glfwSetRawMouseMotionX11,
         _glfwRawMouseMotionSupportedX11,
+        _glfwKeyboardsSupportedX11,
         _glfwCreateCursorX11,
         _glfwCreateStandardCursorX11,
         _glfwDestroyCursorX11,
@@ -1545,6 +1556,7 @@ int _glfwInitX11(void)
     }
 
     _glfwPollMonitorsX11();
+    _glfwPollKeyboardsX11();
     return GLFW_TRUE;
 }
 

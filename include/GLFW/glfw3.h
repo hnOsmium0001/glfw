@@ -1374,6 +1374,16 @@ typedef struct GLFWwindow GLFWwindow;
  */
 typedef struct GLFWcursor GLFWcursor;
 
+/*! @brief Opaque keyboard object.
+ *
+ * Opaque keyboard object.
+ *
+ * @since TODO
+ *
+ * @ingroup input
+ */
+typedef struct GLFWkeyboard GLFWkeyboard;
+
 /*! @brief The function pointer type for memory allocation callbacks.
  *
  *  This is the function pointer type for memory allocation callbacks.  A memory
@@ -1828,7 +1838,7 @@ typedef void (* GLFWscrollfun)(GLFWwindow* window, double xoffset, double yoffse
  *
  *  @ingroup input
  */
-typedef void (* GLFWkeyfun)(GLFWwindow* window, int key, int scancode, int action, int mods);
+typedef void (* GLFWkeyfun)(GLFWwindow* window, GLFWkeyboard* keyboard, int key, int scancode, int action, int mods);
 
 /*! @brief The function pointer type for Unicode character callbacks.
  *
@@ -1922,6 +1932,8 @@ typedef void (* GLFWdropfun)(GLFWwindow* window, int path_count, const char* pat
  *  @ingroup monitor
  */
 typedef void (* GLFWmonitorfun)(GLFWmonitor* monitor, int event);
+
+typedef void (* GLFWkeyboardfun)(GLFWkeyboard* keyboard, int event);
 
 /*! @brief The function pointer type for joystick configuration callbacks.
  *
@@ -4633,6 +4645,18 @@ GLFWAPI void glfwSetInputMode(GLFWwindow* window, int mode, int value);
  *  @ingroup input
  */
 GLFWAPI int glfwRawMouseMotionSupported(void);
+
+GLFWAPI int glfwKeyboardsSupported(void);
+
+GLFWAPI GLFWkeyboardfun glfwSetKeyboardCallback(GLFWkeyboardfun callback);
+
+GLFWAPI GLFWkeyboard** glfwGetKeyboards(int* count);
+
+GLFWAPI const char* glfwGetKeyboardName(GLFWkeyboard* keyboard);
+
+GLFWAPI void glfwSetKeyboardUserPointer(GLFWkeyboard* keyboard, void* pointer);
+
+GLFWAPI void* glfwGetKeyboardUserPointer(GLFWkeyboard* keyboard);
 
 /*! @brief Returns the layout-specific name of the specified printable key.
  *

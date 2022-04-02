@@ -400,6 +400,11 @@ GLFWbool _glfwRawMouseMotionSupportedNull(void)
     return GLFW_TRUE;
 }
 
+GLFWbool _glfwKeyboardsSupportedNull(void)
+{
+    return GLFW_TRUE;
+}
+
 void _glfwShowWindowNull(_GLFWwindow* window)
 {
     window->null.visible = GLFW_TRUE;

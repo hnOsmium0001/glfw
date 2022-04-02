@@ -31,6 +31,7 @@
 
 #define GLFW_NULL_CONTEXT_STATE
 #define GLFW_NULL_CURSOR_STATE
+#define GLFW_NULL_KEYBOARD_STATE
 #define GLFW_NULL_LIBRARY_CONTEXT_STATE
 
 
@@ -113,6 +114,7 @@ float _glfwGetWindowOpacityNull(_GLFWwindow* window);
 void _glfwSetWindowOpacityNull(_GLFWwindow* window, float opacity);
 void _glfwSetRawMouseMotionNull(_GLFWwindow *window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedNull(void);
+GLFWbool _glfwKeyboardsSupportedNull(void);
 void _glfwShowWindowNull(_GLFWwindow* window);
 void _glfwRequestWindowAttentionNull(_GLFWwindow* window);
 void _glfwRequestWindowAttentionNull(_GLFWwindow* window);

@@ -262,9 +262,53 @@ static GLFWbool parseMapping(_GLFWmapping* mapping, const char* string)
 //////                         GLFW event API                       //////
 //////////////////////////////////////////////////////////////////////////
 
+// Shared function for keyboard connection and disconnection
+//
+void _glfwInputKeyboard(_GLFWkeyboard* keyboard, int action, int placement)
+{
+    if (action == GLFW_CONNECTED)
+    {
+        // TODO
+        _glfw.keyboardCount++;
+        _glfw.keyboards =
+            _glfw_realloc(_glfw.keyboards,
+                          sizeof(_GLFWkeyboard*) * _glfw.keyboardCount);
+
+        if (placement == _GLFW_INSERT_FIRST)
+        {
+            memmove(_glfw.keyboards + 1,
+                    _glfw.keyboards,
+                    ((size_t) _glfw.keyboardCount - 1) * sizeof(_GLFWkeyboard*));
+            _glfw.keyboards[0] = keyboard;
+        }
+        else
+            _glfw.keyboards[_glfw.keyboardCount - 1] = keyboard;
+    }
+    else if (action == GLFW_DISCONNECTED)
+    {
+        for (int i = 0;  i < _glfw.keyboardCount;  i++)
+        {
+            if (_glfw.keyboards[i] == keyboard)
+            {
+                _glfw.keyboardCount--;
+                memmove(_glfw.keyboards + i,
+                        _glfw.keyboards + i + 1,
+                        ((size_t) _glfw.keyboardCount - i) * sizeof(_GLFWkeyboard*));
+                break;
+            }
+        }
+    }
+
+    if (_glfw.callbacks.keyboard)
+        _glfw.callbacks.keyboard((GLFWkeyboard*) keyboard, action);
+
+    if (action == GLFW_DISCONNECTED)
+        _glfwFreeKeyboard(keyboard);
+}
+
 // Notifies shared code of a physical key event
 //
-void _glfwInputKey(_GLFWwindow* window, int key, int scancode, int action, int mods)
+void _glfwInputKey(_GLFWwindow* window, _GLFWkeyboard* keyboard, int key, int scancode, int action, int mods)
 {
     if (key >= 0 && key <= GLFW_KEY_LAST)
     {
@@ -289,7 +333,7 @@ void _glfwInputKey(_GLFWwindow* window, int key, int scancode, int action, int m
         mods &= ~(GLFW_MOD_CAPS_LOCK | GLFW_MOD_NUM_LOCK);
 
     if (window->callbacks.key)
-        window->callbacks.key((GLFWwindow*) window, key, scancode, action, mods);
+        window->callbacks.key((GLFWwindow*) window, (GLFWkeyboard*) keyboard, key, scancode, action, mods);
 }
 
 // Notifies shared code of a Unicode codepoint input event
@@ -413,6 +457,21 @@ void _glfwInputJoystickHat(_GLFWjoystick* js, int hat, char value)
 //////////////////////////////////////////////////////////////////////////
 //////                       GLFW internal API                      //////
 //////////////////////////////////////////////////////////////////////////
+
+_GLFWkeyboard* _glfwAllocKeyboard(const char *name)
+{
+    _GLFWkeyboard* keyboard = _glfw_calloc(1, sizeof(_GLFWkeyboard));
+
+    strncpy(keyboard->name, name, sizeof(keyboard->name) - 1);
+
+    return keyboard;
+}
+
+void _glfwFreeKeyboard(_GLFWkeyboard *keyboard)
+{
+    _glfw_free(keyboard->name);
+    _glfw_free(keyboard);
+}
 
 // Adds the built-in set of gamepad mappings
 //
@@ -624,6 +683,58 @@ GLFWAPI int glfwRawMouseMotionSupported(void)
 {
     _GLFW_REQUIRE_INIT_OR_RETURN(GLFW_FALSE);
     return _glfw.platform.rawMouseMotionSupported();
+}
+
+GLFWAPI int glfwKeyboardsSupported(void)
+{
+    _GLFW_REQUIRE_INIT_OR_RETURN(GLFW_FALSE);
+    return _glfw.platform.keyboardsSupported();
+}
+
+GLFWAPI GLFWkeyboardfun glfwSetKeyboardCallback(GLFWkeyboardfun callback)
+{
+    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+    _GLFW_SWAP(GLFWkeyboardfun, _glfw.callbacks.keyboard, callback);
+    return callback;
+}
+
+GLFWAPI GLFWkeyboard** glfwGetKeyboards(int* count)
+{
+    assert(count != NULL);
+
+    *count = 0;
+
+    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+
+    *count = _glfw.keyboardCount;
+    return (GLFWkeyboard**) _glfw.keyboards;
+}
+
+GLFWAPI const char* glfwGetKeyboardName(GLFWkeyboard* handle)
+{
+    _GLFWkeyboard* keyboard = (_GLFWkeyboard*) handle;
+    assert(keyboard != NULL);
+
+    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+    return keyboard->name;
+}
+
+GLFWAPI void glfwSetKeyboardUserPointer(GLFWkeyboard* handle, void* pointer)
+{
+    _GLFWkeyboard* keyboard = (_GLFWkeyboard*) handle;
+    assert(keyboard != NULL);
+
+    _GLFW_REQUIRE_INIT();
+    keyboard->userPointer = pointer;
+}
+
+GLFWAPI void* glfwGetKeyboardUserPointer(GLFWkeyboard* handle)
+{
+    _GLFWkeyboard* keyboard = (_GLFWkeyboard*) handle;
+    assert(keyboard != NULL);
+
+    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+    return keyboard->userPointer;
 }
 
 GLFWAPI const char* glfwGetKeyName(int key, int scancode)

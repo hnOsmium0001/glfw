@@ -32,6 +32,7 @@
 #include <X11/cursorfont.h>
 #include <X11/Xmd.h>
 
+#include <X11/extensions/XInput2.h>
 #include <poll.h>
 
 #include <string.h>
@@ -241,6 +242,11 @@ static int translateKey(int scancode)
         return GLFW_KEY_UNKNOWN;
 
     return _glfw.x11.keycodes[scancode];
+}
+
+static int translateXI2Mods(XIModifierState* mods)
+{
+    return translateState(mods->effective);
 }
 
 // Sends an EWMH or ICCCM event to the window manager
@@ -525,29 +531,16 @@ static void updateCursorImage(_GLFWwindow* window)
 //
 static void enableRawMouseMotion(_GLFWwindow* window)
 {
-    XIEventMask em;
-    unsigned char mask[XIMaskLen(XI_RawMotion)] = { 0 };
-
-    em.deviceid = XIAllMasterDevices;
-    em.mask_len = sizeof(mask);
-    em.mask = mask;
-    XISetMask(mask, XI_RawMotion);
-
-    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
+    XISetMask(_glfw.x11.xi.eventMask, XI_RawMotion);
+    _glfwUpdateXIEventMaskX11();
 }
 
 // Disable XI2 raw mouse motion events
 //
 static void disableRawMouseMotion(_GLFWwindow* window)
 {
-    XIEventMask em;
-    unsigned char mask[] = { 0 };
-
-    em.deviceid = XIAllMasterDevices;
-    em.mask_len = sizeof(mask);
-    em.mask = mask;
-
-    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
+    XIClearMask(_glfw.x11.xi.eventMask, XI_RawMotion);
+    _glfwUpdateXIEventMaskX11();
 }
 
 // Apply disabled cursor mode to a focused window
@@ -1184,44 +1177,6 @@ static void processEvent(XEvent *event)
         }
     }
 
-    if (event->type == GenericEvent)
-    {
-        if (_glfw.x11.xi.available)
-        {
-            _GLFWwindow* window = _glfw.x11.disabledCursorWindow;
-
-            if (window &&
-                window->rawMouseMotion &&
-                event->xcookie.extension == _glfw.x11.xi.majorOpcode &&
-                XGetEventData(_glfw.x11.display, &event->xcookie) &&
-                event->xcookie.evtype == XI_RawMotion)
-            {
-                XIRawEvent* re = event->xcookie.data;
-                if (re->valuators.mask_len)
-                {
-                    const double* values = re->raw_values;
-                    double xpos = window->virtualCursorPosX;
-                    double ypos = window->virtualCursorPosY;
-
-                    if (XIMaskIsSet(re->valuators.mask, 0))
-                    {
-                        xpos += *values;
-                        values++;
-                    }
-
-                    if (XIMaskIsSet(re->valuators.mask, 1))
-                        ypos += *values;
-
-                    _glfwInputCursorPos(window, xpos, ypos);
-                }
-            }
-
-            XFreeEventData(_glfw.x11.display, &event->xcookie);
-        }
-
-        return;
-    }
-
     if (event->type == SelectionClear)
     {
         handleSelectionClear(event);
@@ -1243,6 +1198,127 @@ static void processEvent(XEvent *event)
         return;
     }
 
+    if (event->type == GenericEvent)
+    {
+        if (_glfw.x11.xi.available &&
+            event->xcookie.extension == _glfw.x11.xi.majorOpcode)
+        {
+            if (XGetEventData(_glfw.x11.display, &event->xcookie))
+                goto fail;
+
+            switch (event->xcookie.evtype)
+            {
+                case XI_KeyPress:
+                {
+                    XIDeviceEvent* de = event->xcookie.data;
+                    Bool repeat = de->flags & XIKeyRepeat;
+
+                    const int key = translateKey(de->detail);
+                    const int mods = translateXI2Mods(&de->mods);
+
+                    // XIDeviceEvent::deviceid gives the final device in the redirection chain (which is usually the master device),
+                    // whereas XIDeviceEvent::sourceid gives the actual slave device that generated this event
+                    _GLFWkeyboard* keyboard = _glfwGetKeyboardFromDeviceIdX11(de->sourceid);// TODO(hnosm) do we need to handle XIM?
+                    _glfwInputKey(window, keyboard, key, de->detail, repeat ? GLFW_REPEAT : GLFW_PRESS, mods);
+
+                    break;
+                }
+
+                case XI_KeyRelease:
+                {
+                    XIDeviceEvent* de = event->xcookie.data;
+
+                    const int key = translateKey(de->detail);
+                    const int mods = translateXI2Mods(&de->mods);
+
+                    _GLFWkeyboard* keyboard = _glfwGetKeyboardFromDeviceIdX11(de->sourceid);
+                    _glfwInputKey(window, keyboard, key, de->detail, GLFW_RELEASE, mods);
+
+                    break;
+                }
+
+                case XI_HierarchyChanged:
+                {
+                    XIHierarchyEvent* he = event->xcookie.data;
+                    for (int i = 0;  i < he->num_info;  i++)
+                    { 
+                        XIHierarchyInfo* info = he->info + i;
+                        if (info->use != XISlaveKeyboard)
+                            continue;
+
+                        // Whenever a new keyboard is plugged in, for each device it generates there will be a XISlaveAdded event followed by a XIDeviceEnabled event,
+                        // we only check the former because devices may also be enabled/disabled during its lifetime.
+                        if (info->flags & XISlaveAdded)
+                        {
+                            int deviceCount;
+                            XIDeviceInfo* device = XIQueryDevice(_glfw.x11.display, info->deviceid, &deviceCount);
+
+                            _GLFWkeyboard* keyboard = _glfwAllocKeyboard(device->name);
+
+                            keyboard->x11.deviceid = device->deviceid;
+                            keyboard->x11.enabled = device->enabled;
+
+                            _glfwInputKeyboard(keyboard, GLFW_CONNECTED, _GLFW_INSERT_LAST);
+
+                            XIFreeDeviceInfo(device);
+                        }
+                        // Similarly, when a keyboard is removed, a XIDeviceDisabled event is followed by a XISlaveRemoved event.
+                        if (info->flags & XISlaveRemoved)
+                        {
+                            _glfwInputKeyboard(_glfwGetKeyboardFromDeviceIdX11(info->deviceid),
+                                            GLFW_DISCONNECTED,
+                                            _GLFW_INSERT_LAST);
+                        }
+
+                        if (info->flags & XIDeviceEnabled)
+                        {
+                            _glfwGetKeyboardFromDeviceIdX11(info->deviceid)->x11.enabled = GLFW_TRUE;
+                        }
+                        if (info->flags & XIDeviceDisabled)
+                        {
+                            _glfwGetKeyboardFromDeviceIdX11(info->deviceid)->x11.enabled = GLFW_FALSE;
+                        }
+                    }
+
+                    break;
+                }
+
+                case XI_RawMotion:
+                {
+                    _GLFWwindow* window = _glfw.x11.disabledCursorWindow;
+
+                    if (window && window->rawMouseMotion)
+                    {
+                        XIRawEvent* re = event->xcookie.data;
+                        if (re->valuators.mask_len)
+                        {
+                            const double* values = re->raw_values;
+                            double xpos = window->virtualCursorPosX;
+                            double ypos = window->virtualCursorPosY;
+
+                            if (XIMaskIsSet(re->valuators.mask, 0))
+                            {
+                                xpos += *values;
+                                values++;
+                            }
+
+                            if (XIMaskIsSet(re->valuators.mask, 1))
+                                ypos += *values;
+
+                            _glfwInputCursorPos(window, xpos, ypos);
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+        fail:
+            XFreeEventData(_glfw.x11.display, &event->xcookie);
+        }
+        return;
+    }
+
     switch (event->type)
     {
         case ReparentNotify:
@@ -1259,20 +1335,24 @@ static void processEvent(XEvent *event)
 
             if (window->x11.ic)
             {
-                // HACK: Do not report the key press events duplicated by XIM
-                //       Duplicate key releases are filtered out implicitly by
-                //       the GLFW key repeat logic in _glfwInputKey
-                //       A timestamp per key is used to handle simultaneous keys
-                // NOTE: Always allow the first event for each key through
-                //       (the server never sends a timestamp of zero)
-                // NOTE: Timestamp difference is compared to handle wrap-around
-                Time diff = event->xkey.time - window->x11.keyPressTimes[keycode];
-                if (diff == event->xkey.time || (diff > 0 && diff < ((Time)1 << 31)))
+                // Non-XInput2 codepath, see above for handling of those
+                if (!_glfwKeyboardsSupportedX11())
                 {
-                    if (keycode)
-                        _glfwInputKey(window, key, keycode, GLFW_PRESS, mods);
+                    // HACK: Do not report the key press events duplicated by XIM
+                    //       Duplicate key releases are filtered out implicitly by
+                    //       the GLFW key repeat logic in _glfwInputKey
+                    //       A timestamp per key is used to handle simultaneous keys
+                    // NOTE: Always allow the first event for each key through
+                    //       (the server never sends a timestamp of zero)
+                    // NOTE: Timestamp difference is compared to handle wrap-around
+                    Time diff = event->xkey.time - window->x11.keyPressTimes[keycode];
+                    if (diff == event->xkey.time || (diff > 0 && diff < ((Time)1 << 31)))
+                    {
+                        if (keycode)
+                            _glfwInputKey(window, NULL, key, keycode, GLFW_PRESS, mods);
 
-                    window->x11.keyPressTimes[keycode] = event->xkey.time;
+                        window->x11.keyPressTimes[keycode] = event->xkey.time;
+                    }
                 }
 
                 if (!filtered)
@@ -1313,7 +1393,11 @@ static void processEvent(XEvent *event)
                 KeySym keysym;
                 XLookupString(&event->xkey, NULL, 0, &keysym, NULL);
 
-                _glfwInputKey(window, key, keycode, GLFW_PRESS, mods);
+                // Non-XInput2 codepath, see above for handling of those
+                if (!_glfwKeyboardsSupportedX11())
+                {
+                    _glfwInputKey(window, NULL, key, keycode, GLFW_PRESS, mods);
+                }
 
                 const uint32_t codepoint = _glfwKeySym2Unicode(keysym);
                 if (codepoint != GLFW_INVALID_CODEPOINT)
@@ -1325,6 +1409,10 @@ static void processEvent(XEvent *event)
 
         case KeyRelease:
         {
+            // Non-XInput2 codepath, see above for handling of those
+            if (_glfwKeyboardsSupportedX11())
+                return;
+
             const int key = translateKey(keycode);
             const int mods = translateState(event->xkey.state);
 
@@ -1360,7 +1448,7 @@ static void processEvent(XEvent *event)
                 }
             }
 
-            _glfwInputKey(window, key, keycode, GLFW_RELEASE, mods);
+            _glfwInputKey(window, NULL, key, keycode, GLFW_RELEASE, mods);
             return;
         }
 
@@ -2769,6 +2857,66 @@ void _glfwSetRawMouseMotionX11(_GLFWwindow *window, GLFWbool enabled)
 GLFWbool _glfwRawMouseMotionSupportedX11(void)
 {
     return _glfw.x11.xi.available;
+}
+
+void _glfwUpdateXIEventMaskX11(void)
+{
+    XIEventMask em;
+    em.deviceid = XIAllMasterDevices;
+    em.mask_len = sizeof(_glfw.x11.xi.eventMask);
+    em.mask = _glfw.x11.xi.eventMask;
+
+    XISelectEvents(_glfw.x11.display, _glfw.x11.root, &em, 1);
+}
+
+void _glfwPollKeyboardsX11(void)
+{
+    // TODO(hnosm) unimplemented
+    //             This function is currently only used during startup to collect the initial list of keyboards
+    assert(_glfw.keyboardCount == 0);
+
+    if (_glfwKeyboardsSupportedX11())
+    {
+        int deviceCount;
+        XIDeviceInfo* devices = XIQueryDevice(_glfw.x11.display, XIAllDevices, &deviceCount);
+
+        for (int i = 0;  i < deviceCount;  i++)
+        {
+            XIDeviceInfo* device = devices + i;
+            if (device->use != XISlaveKeyboard)
+                continue;
+
+            _GLFWkeyboard* keyboard = _glfwAllocKeyboard(device->name);
+
+            keyboard->x11.deviceid = device->deviceid;
+
+            _glfwInputKeyboard(keyboard, GLFW_CONNECTED, _GLFW_INSERT_LAST);
+        }
+
+        XIFreeDeviceInfo(devices);
+    }
+    else
+    {
+        _glfwInputKeyboard(_glfwAllocKeyboard("Keyboard"),
+                           GLFW_CONNECTED,
+                           _GLFW_INSERT_LAST);
+    }
+}
+
+GLFWbool _glfwKeyboardsSupportedX11(void)
+{
+    return _glfw.x11.xi.available;
+}
+
+_GLFWkeyboard* _glfwGetKeyboardFromDeviceIdX11(int deviceid)
+{
+    // TODO(hnosm) overhead too big?
+    for (int i = 0;  i < _glfw.keyboardCount;  i++)
+    {
+        if (_glfw.keyboards[i]->x11.deviceid == deviceid)
+            return _glfw.keyboards[i];
+    }
+    return NULL;
 }
 
 void _glfwPollEventsX11(void)

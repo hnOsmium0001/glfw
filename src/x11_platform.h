@@ -371,8 +371,12 @@ typedef Bool (* PFN_XF86VidModeGetGammaRampSize)(Display*,int,int*);
 
 typedef Status (* PFN_XIQueryVersion)(Display*,int*,int*);
 typedef int (* PFN_XISelectEvents)(Display*,Window,XIEventMask*,int);
+typedef XIDeviceInfo* (* PFN_XIQueryDevice)(Display*,int,int*);
+typedef void (* PFN_XIFreeDeviceInfo)(XIDeviceInfo*);
 #define XIQueryVersion _glfw.x11.xi.QueryVersion
 #define XISelectEvents _glfw.x11.xi.SelectEvents
+#define XIQueryDevice _glfw.x11.xi.QueryDevice
+#define XIFreeDeviceInfo _glfw.x11.xi.FreeDeviceInfo
 
 typedef Bool (* PFN_XRenderQueryExtension)(Display*,int*,int*);
 typedef Status (* PFN_XRenderQueryVersion)(Display*dpy,int*,int*);
@@ -459,6 +463,7 @@ typedef VkBool32 (APIENTRY *PFN_vkGetPhysicalDeviceXcbPresentationSupportKHR)(Vk
 #define GLFW_X11_LIBRARY_WINDOW_STATE   _GLFWlibraryX11 x11;
 #define GLFW_X11_MONITOR_STATE          _GLFWmonitorX11 x11;
 #define GLFW_X11_CURSOR_STATE           _GLFWcursorX11 x11;
+#define GLFW_X11_KEYBOARD_STATE         _GLFWkeyboardX11 x11;
 
 #define GLFW_GLX_CONTEXT_STATE          _GLFWcontextGLX glx;
 #define GLFW_GLX_LIBRARY_CONTEXT_STATE  _GLFWlibraryGLX glx;
@@ -847,6 +852,9 @@ typedef struct _GLFWlibraryX11
         int         minor;
         PFN_XIQueryVersion QueryVersion;
         PFN_XISelectEvents SelectEvents;
+        PFN_XIQueryDevice QueryDevice;
+        PFN_XIFreeDeviceInfo FreeDeviceInfo;
+        unsigned char eventMask[XIMaskLen(XI_LASTEVENT)];
     } xi;
 
     struct {
@@ -895,6 +903,12 @@ typedef struct _GLFWcursorX11
     Cursor handle;
 } _GLFWcursorX11;
 
+typedef struct _GLFWkeyboardX11
+{
+    int deviceid;
+    int enabled; // TODO(hnosm) is this field really useful?
+} _GLFWkeyboardX11;
+
 
 GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform);
 int _glfwInitX11(void);
@@ -936,6 +950,12 @@ void _glfwSetWindowMousePassthroughX11(_GLFWwindow* window, GLFWbool enabled);
 
 void _glfwSetRawMouseMotionX11(_GLFWwindow *window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedX11(void);
+
+void _glfwUpdateXIEventMaskX11(void);
+
+void _glfwPollKeyboardsX11(void);
+GLFWbool _glfwKeyboardsSupportedX11(void);
+_GLFWkeyboard* _glfwGetKeyboardFromDeviceIdX11(int deviceid);
 
 void _glfwPollEventsX11(void);
 void _glfwWaitEventsX11(void);

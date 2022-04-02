@@ -56,7 +56,8 @@ void _glfwInputWindowFocus(_GLFWwindow* window, GLFWbool focused)
             if (window->keys[key] == GLFW_PRESS)
             {
                 const int scancode = _glfw.platform.getKeyScancode(key);
-                _glfwInputKey(window, key, scancode, GLFW_RELEASE, 0);
+                // TODO how do we get rid of null?
+                _glfwInputKey(window, NULL, key, scancode, GLFW_RELEASE, 0);
             }
         }
 
