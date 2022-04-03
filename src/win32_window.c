@@ -535,8 +535,8 @@ static void maximizeWindowManually(_GLFWwindow* window)
 
 static void addRawInputKeyboard(HANDLE device)
 {
-    UINT deviceNameWcharCount;
-    WCHAR* deviceNameWchar;
+    UINT deviceNameWcharCount = 0;
+    WCHAR* deviceNameWchar = NULL;
 
     GetRawInputDeviceInfoW(device, RIDI_DEVICENAME, NULL, &deviceNameWcharCount);
     deviceNameWchar = _glfw_calloc(deviceNameWcharCount, sizeof(WCHAR));
@@ -766,105 +766,6 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             return 0;
         }
 
-        case WM_KEYDOWN:
-        case WM_SYSKEYDOWN:
-        case WM_KEYUP:
-        case WM_SYSKEYUP:
-        {
-            // See WM_INPUT
-            // TODO(hnosm) on win32 this is always true?
-#if 1
-            if (_glfwKeyboardsSupportedWin32())
-                break;
-#endif
-
-            int key, scancode;
-            const int action = (HIWORD(lParam) & KF_UP) ? GLFW_RELEASE : GLFW_PRESS;
-            const int mods = getKeyMods();
-
-            scancode = (HIWORD(lParam) & (KF_EXTENDED | 0xff));
-            if (!scancode)
-            {
-                // NOTE: Some synthetic key messages have a scancode of zero
-                // HACK: Map the virtual key back to a usable scancode
-                scancode = MapVirtualKeyW((UINT) wParam, MAPVK_VK_TO_VSC);
-            }
-
-            // HACK: Alt+PrtSc has a different scancode than just PrtSc
-            if (scancode == 0x54)
-                scancode = 0x137;
-
-            // HACK: Ctrl+Pause has a different scancode than just Pause
-            if (scancode == 0x146)
-                scancode = 0x45;
-
-            key = _glfw.win32.keycodes[scancode];
-
-            // The Ctrl keys require special handling
-            if (wParam == VK_CONTROL)
-            {
-                if (HIWORD(lParam) & KF_EXTENDED)
-                {
-                    // Right side keys have the extended key bit set
-                    key = GLFW_KEY_RIGHT_CONTROL;
-                }
-                else
-                {
-                    // NOTE: Alt Gr sends Left Ctrl followed by Right Alt
-                    // HACK: We only want one event for Alt Gr, so if we detect
-                    //       this sequence we discard this Left Ctrl message now
-                    //       and later report Right Alt normally
-                    MSG next;
-                    const DWORD time = GetMessageTime();
-
-                    if (PeekMessageW(&next, NULL, 0, 0, PM_NOREMOVE))
-                    {
-                        if (next.message == WM_KEYDOWN ||
-                            next.message == WM_SYSKEYDOWN ||
-                            next.message == WM_KEYUP ||
-                            next.message == WM_SYSKEYUP)
-                        {
-                            if (next.wParam == VK_MENU &&
-                                (HIWORD(next.lParam) & KF_EXTENDED) &&
-                                next.time == time)
-                            {
-                                // Next message is Right Alt down so discard this
-                                break;
-                            }
-                        }
-                    }
-
-                    // This is a regular Left Ctrl message
-                    key = GLFW_KEY_LEFT_CONTROL;
-                }
-            }
-            else if (wParam == VK_PROCESSKEY)
-            {
-                // IME notifies that keys have been filtered by setting the
-                // virtual key-code to VK_PROCESSKEY
-                break;
-            }
-
-            if (action == GLFW_RELEASE && wParam == VK_SHIFT)
-            {
-                // HACK: Release both Shift keys on Shift up event, as when both
-                //       are pressed the first release does not emit any event
-                // NOTE: The other half of this is in _glfwPollEventsWin32
-                _glfwInputKey(window, NULL, GLFW_KEY_LEFT_SHIFT, scancode, action, mods);
-                _glfwInputKey(window, NULL, GLFW_KEY_RIGHT_SHIFT, scancode, action, mods);
-            }
-            else if (wParam == VK_SNAPSHOT)
-            {
-                // HACK: Key down is not reported for the Print Screen key
-                _glfwInputKey(window, NULL, key, scancode, GLFW_PRESS, mods);
-                _glfwInputKey(window, NULL, key, scancode, GLFW_RELEASE, mods);
-            }
-            else
-                _glfwInputKey(window, NULL, key, scancode, action, mods);
-
-            break;
-        }
-
         case WM_LBUTTONDOWN:
         case WM_RBUTTONDOWN:
         case WM_MBUTTONDOWN:
@@ -1019,16 +920,19 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                 case RIM_TYPEKEYBOARD:
                 {
-                    //break;
-
                     // TODO(hnosm) don't report key events when IME filtered the WM_INPUT
 
                     // NOTE: "scancode" and "MakeCode" are used interchangeably below
                     // NOTE: "key". "keycode", and "VKey" are used interchangeably below
 
+                    // NOTE: RawInput and PS/2
+                    //       RawInput uses PS/2 scancodes
+
                     RAWKEYBOARD* dataKbd = &data->data.keyboard;
 
-                    GLFWbool extended = (dataKbd->Flags & RI_KEY_E0) || (dataKbd->Flags & RI_KEY_E1);
+                    GLFWbool e0 = dataKbd->Flags & RI_KEY_E0;
+                    GLFWbool e1 = dataKbd->Flags & RI_KEY_E1;
+                    GLFWbool extended = e0 || e1;
                     int scancode = dataKbd->MakeCode;
                     int key = _glfw.win32.keycodes[scancode];
 
@@ -1082,38 +986,49 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     }
 
                     // When PrntScr key is pressed, Windows generates the following messages:
-                    // 1. WM_INPUT; make, MakeCode == 0x02A (LEFT_SHIFT), VKey == 255
-                    // 2. WM_INPUT; make, MakeCode == 0x037 (KP_MULTIPLY), VKey == VK_SNAPSHOT
-                    // 3. WM_INPUT; break, MakeCode == 0x037 (KP_MULTIPLY), VKey == VK_SNAPSHOT
+                    // 1. WM_INPUT; make, MakeCode == 0x2A, VKey == 255
+                    // 2. WM_INPUT; make, MakeCode == 0x37, VKey == VK_SNAPSHOT
+                    // 3. WM_INPUT; break, MakeCode == 0x37, VKey == VK_SNAPSHOT
                     // 4. WM_KEYUP; wParam == VK_SNAPSHOT
-                    // 5. WM_INPUT; break, MakeCode == 0x02A (LEFT_SHIFT), VKey == 255
+                    // 5. WM_INPUT; break, MakeCode == 0x2A, VKey == 255
 
                     // When Pause key is pressed, Windows generates the following messages:
-                    // 1. WM_INPUT; make, MakeCode == 0x01D (LEFT_CONTROL), VKey == VK_PAUSE
+                    // 1. WM_INPUT; make, MakeCode == 0x1D, VKey == VK_PAUSE
                     // 2. WM_KEYDOWN; wParam == VK_PAUSE
-                    // 3. WM_INPUT; make, MakeCode == 0x045 (PAUSE), VKey == 255
-                    // 4. WM_INPUT; break, MakeCode == 0x01D (LEFT_CONTROL), VKey == VK_PAUSE
+                    // 3. WM_INPUT; make, MakeCode == 0x45, VKey == 255
+                    // 4. WM_INPUT; break, MakeCode == 0x1D, VKey == VK_PAUSE
                     // 5. WM_KEYUP; wParam == VK_PAUSE
-                    // 6. WM_INPUT; break, MakeCode == 0x045 (PAUSE), VKey == 255
+                    // 6. WM_INPUT; break, MakeCode == 0x45, VKey == 255
 
                     // When Ctrl+Pause is pressed (omitting the Ctrl messages at the beginning and the end):
                     // 1. WM_KEYDOWN; wParam == VK_CANCEL
-                    // 2. WM_INPUT; make, MakeCode == 0x046 (SCROLL_LOCK), VKey == VK_CANCEL
-                    // 3. WM_INPUT; break, MakeCode == 0x046 (SCROLL_LOCK), VKey == VK_CANCEL
+                    // 2. WM_INPUT; make, MakeCode == 0x46, VKey == VK_CANCEL
+                    // 3. WM_INPUT; break, MakeCode == 0x46, VKey == VK_CANCEL
                     // 4. WM_KEYUP; wParam == VK_CANCEL
+
+                    // See https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/translate.pdf
 
                     // HACK: filter VKey == 255 messages because they are paired with other WM_INPUT messageas
                     if (dataKbd->VKey == 255)
                         break;
-
-                    if (dataKbd->VKey == VK_SNAPSHOT)
+                    
+                    // PS/2 scancode PrntScr
+                    if (e0 && scancode == 0x37)
                         key = GLFW_KEY_PRINT_SCREEN;
-                    if (dataKbd->VKey == VK_PAUSE)
+
+                    // PS/2 scancode ScrollLock
+                    if (!extended && scancode == 0x46)
+                        key = GLFW_KEY_SCROLL_LOCK;
+
+                    // PS/2 scancode Pause
+                    // NOTE: epsecified as E1 1D 45, it is sent as 2 separate WM_INPUT messages with e1 set, and MakeCode = 0x1D and 0x45 respectively
+                    // NOTE: we can ignore the second event because no other key combination generates E1 45
+                    if (e1 && scancode == 0x1D)
                         key = GLFW_KEY_PAUSE;
-                    if (dataKbd->VKey == VK_CANCEL)
+
+                    // PS/2 scancode Ctrl+Pause
+                    if (e0 && scancode == 0x46)
                         key = GLFW_KEY_PAUSE;
-                    // TODO(hnosm) fix this mess
-                    //             currently Ctrl+ScrollLock will be detected as CTRL+PAUSE because that generates 0x046 + VK_CACNEL (0x03) also
 
                     // NOTE: RI_KEY_MAKE (indicating press) is 0, which means &-ing does nothing, therefore we must check key down/up state using RI_KEY_BREAK (indicating release, is 1) instead
                     int action = (dataKbd->Flags & RI_KEY_BREAK) ? GLFW_RELEASE : GLFW_PRESS;
@@ -1192,7 +1107,7 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         // NOTE: this feature is only supported on Windows Vista and above
         case 0x00FE: // WM_INPUT_DEVICE_CHANGE
         {
-            HANDLE device = lParam;
+            HANDLE device = (HANDLE) lParam;
 
             if (wParam == GIDC_ARRIVAL)
             {
@@ -1792,7 +1707,7 @@ void _glfwDestroyWindowWin32(_GLFWwindow* window)
         else
         {
             _glfw.win32.rawInputDevicesWindow = candidate;
-            setupWindowRawInput(candidate);
+            setupWindowRawInput(candidate->win32.handle);
         }
     }
 
@@ -2336,7 +2251,7 @@ void _glfwPollKeyboardsWin32(void)
 
         numDevicesSuccessfullyFetched = GetRawInputDeviceList(devices, &numDevices, sizeof(RAWINPUTDEVICELIST));
     } while (numDevicesSuccessfullyFetched == (UINT) -1 && GetLastError() == ERROR_INSUFFICIENT_BUFFER);
-
+    
     if (numDevicesSuccessfullyFetched == (UINT) -1)
         goto fail;
 
