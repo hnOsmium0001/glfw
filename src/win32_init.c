@@ -654,6 +654,18 @@ int _glfwInitWin32(void)
     if (!createHelperWindow())
         return GLFW_FALSE;
 
+    // Register that we want to receive WM_INPUT for keyboards
+    {
+        RAWINPUTDEVICE rid;
+        rid.usUsagePage = 0x01;         // HID_USAGE_PAGE_GENERIC
+        rid.usUsage = 0x06;             // HID_USAGE_GENERIC_KEYBOARD
+        rid.dwFlags = 0;
+        rid.hwndTarget = 0;             // Message delivered to focused window
+
+        if (RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE)) == FALSE)
+            return GLFW_FALSE;
+    }
+
     _glfwPollMonitorsWin32();
     _glfwPollKeyboardsWin32();
     return GLFW_TRUE;

@@ -533,6 +533,37 @@ static void maximizeWindowManually(_GLFWwindow* window)
                  SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED);
 }
 
+static void addRawInputKeyboard(HANDLE device)
+{
+    UINT deviceNameWcharCount;
+    WCHAR* deviceNameWchar;
+
+    GetRawInputDeviceInfoW(device, RIDI_DEVICENAME, NULL, &deviceNameWcharCount);
+    deviceNameWchar = _glfw_calloc(deviceNameWcharCount, sizeof(WCHAR));
+    GetRawInputDeviceInfoW(device, RIDI_DEVICENAME, deviceNameWchar, &deviceNameWcharCount);
+
+    {
+        _GLFWkeyboard* keyboard = _glfwAllocKeyboard("Unknown");
+
+        INT length = WideCharToMultiByte(CP_UTF8, 0, deviceNameWchar, deviceNameWcharCount, keyboard->name, sizeof(keyboard->name), NULL, NULL);
+        keyboard->name[length] = '\0';
+        keyboard->win32.device = device;
+
+        _glfwInputKeyboard(keyboard, GLFW_CONNECTED, _GLFW_INSERT_LAST);
+    }
+
+    free(deviceNameWchar);
+}
+
+static void removeRawInputKeyboard(HANDLE device)
+{
+    _GLFWkeyboard* keyboard = _glfwGetKeyboardFromDeviceWin32(device);
+    if (keyboard == NULL)
+        return;
+
+    _glfwInputKeyboard(keyboard, GLFW_DISCONNECTED, _GLFW_INSERT_LAST);
+}
+
 // Window callback function (handles window messages)
 //
 static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -1158,10 +1189,29 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             break;
         }
 
-        case WM_INPUT_DEVICE_CHANGE:
+        // NOTE: this feature is only supported on Windows Vista and above
+        case 0x00FE: // WM_INPUT_DEVICE_CHANGE
         {
-            // TODO
-            break;
+            HANDLE device = lParam;
+
+            if (wParam == GIDC_ARRIVAL)
+            {
+                // NOTE: WM_INPUT_DEVICE_CHANGE seem to fire when RIDEV_DEVNOTIFY is first set on a window, so we get duplicate devices here as the ones collected in _glfwPollKeyboardsWin32()
+                // Filter duplicate devices
+                for (int i = 0;  i < _glfw.keyboardCount;  i++)
+                {
+                    if (_glfw.keyboards[i]->win32.device == device)
+                        return 0;
+                }
+
+                addRawInputKeyboard(device);
+            }
+            else if (wParam == GIDC_REMOVAL)
+            {
+                removeRawInputKeyboard(device);
+            }
+
+            return 0;
         }
 
         case WM_MOUSELEAVE:
@@ -1460,6 +1510,23 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 }
 
+static void setupWindowRawInput(HWND hWnd)
+{
+    // RIDEV_DEVNOTIFY is only supported on Windows Vista and above
+    if (!IsWindowsVistaOrGreater())
+        return;
+
+    RAWINPUTDEVICE rid;
+    rid.usUsagePage = 0x01;         // HID_USAGE_PAGE_GENERIC
+    rid.dwFlags = 0x00002000;       // RIDEV_DEVNOTIFY
+    rid.usUsage = 0x06;             // HID_USAGE_GENERIC_KEYBOARD
+    rid.hwndTarget = hWnd;
+
+    // TODO(hnosm) RIDEV_DEVNOTIFY only works if hwndTarget is set
+    //             but this solution doesn't work if the GLFW user doesn't create any windows
+    RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE));
+}
+
 // Creates the GLFW window
 //
 static int createNativeWindow(_GLFWwindow* window,
@@ -1605,6 +1672,12 @@ static int createNativeWindow(_GLFWwindow* window,
 
     _glfwGetWindowSizeWin32(window, &window->win32.width, &window->win32.height);
 
+    if (_glfw.win32.rawInputDevicesWindow == NULL)
+    {
+        _glfw.win32.rawInputDevicesWindow = window;
+        setupWindowRawInput(window->win32.handle);
+    }
+
     return GLFW_TRUE;
 }
 
@@ -1705,6 +1778,23 @@ void _glfwDestroyWindowWin32(_GLFWwindow* window)
 
     if (_glfw.win32.disabledCursorWindow == window)
         _glfw.win32.disabledCursorWindow = NULL;
+
+    if (_glfw.win32.rawInputDevicesWindow == window)
+    {
+        _GLFWwindow* candidate = _glfw.windowListHead;
+        do {
+            if (candidate != window)
+                break;
+        } while (candidate->next != NULL);
+
+        if (candidate == window)
+            _glfw.win32.rawInputDevicesWindow = NULL;
+        else
+        {
+            _glfw.win32.rawInputDevicesWindow = candidate;
+            setupWindowRawInput(candidate);
+        }
+    }
 
     if (window->win32.handle)
     {
@@ -2252,42 +2342,10 @@ void _glfwPollKeyboardsWin32(void)
 
     for (UINT i = 0;  i < numDevicesSuccessfullyFetched;  i++)
     {
-        if (devices[i].dwType != RIM_TYPEKEYBOARD)
-            continue;
-
-        HANDLE handle = devices[i].hDevice;
-
-        UINT deviceNameWcharCount;
-        WCHAR* deviceNameWchar;
-
-        GetRawInputDeviceInfoW(handle, RIDI_DEVICENAME, NULL, &deviceNameWcharCount);
-        deviceNameWchar = _glfw_calloc(deviceNameWcharCount, sizeof(WCHAR));
-        GetRawInputDeviceInfoW(handle, RIDI_DEVICENAME, deviceNameWchar, &deviceNameWcharCount);
-
+        if (devices[i].dwType == RIM_TYPEKEYBOARD)
         {
-            _GLFWkeyboard* keyboard = _glfwAllocKeyboard("Unknown");
-
-            INT length = WideCharToMultiByte(CP_UTF8, 0, deviceNameWchar, deviceNameWcharCount, keyboard->name, sizeof(keyboard->name), NULL, NULL);
-            keyboard->name[length] = '\0';
-            keyboard->win32.device = handle;
-
-            _glfwInputKeyboard(keyboard, GLFW_CONNECTED, _GLFW_INSERT_LAST);
+            addRawInputKeyboard(devices[i].hDevice);
         }
-
-        free(deviceNameWchar);
-    }
-
-    // Register that we want to receive WM_INPUT for keyboards
-    RAWINPUTDEVICE rid;
-    rid.usUsagePage = 0x01;         // HID_USAGE_PAGE_GENERIC
-    rid.usUsage = 0x06;             // HID_USAGE_GENERIC_KEYBOARD
-    rid.dwFlags = RIDEV_DEVNOTIFY;
-    rid.hwndTarget = 0;
-
-    if (RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE)) == FALSE)
-    {
-        // Failed to register
-        // TODO(hnosm)
     }
 
 fail:
@@ -2302,7 +2360,6 @@ GLFWbool _glfwKeyboardsSupportedWin32(void)
 
 _GLFWkeyboard* _glfwGetKeyboardFromDeviceWin32(HANDLE device)
 {
-    // TODO(hnosm) overhead too big?
     for (int i = 0; i < _glfw.keyboardCount; i++)
     {
         if (_glfw.keyboards[i]->win32.device == device)

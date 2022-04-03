@@ -455,6 +455,8 @@ typedef struct _GLFWlibraryWin32
     double              restoreCursorPosX, restoreCursorPosY;
     // The window whose disabled cursor mode is active
     _GLFWwindow*        disabledCursorWindow;
+    // The window who receives RIDEV_DEVNOTIFY messages
+    _GLFWwindow*        rawInputDevicesWindow;
     RAWINPUT*           rawInput;
     int                 rawInputSize;
     UINT                mouseTrailSize;

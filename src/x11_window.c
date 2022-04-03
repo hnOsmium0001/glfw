@@ -2955,7 +2955,6 @@ GLFWbool _glfwKeyboardsSupportedX11(void)
 
 _GLFWkeyboard* _glfwGetKeyboardFromDeviceIdX11(int deviceid)
 {
-    // TODO(hnosm) overhead too big?
     for (int i = 0;  i < _glfw.keyboardCount;  i++)
     {
         if (_glfw.keyboards[i]->x11.deviceid == deviceid)
