@@ -372,6 +372,26 @@ typedef VkBool32 (APIENTRY *PFN_vkGetPhysicalDeviceWin32PresentationSupportKHR)(
 #define GLFW_WGL_LIBRARY_CONTEXT_STATE  _GLFWlibraryWGL wgl;
 
 
+// Structure of keymap index:
+// XYkkkkkkkk <- 8 bit make code
+// ^^
+// |\-- E0 bit
+// \--- E1 bit
+
+#define GLFW_WIN32_KEYMAP_MAKECODE_LEN 8
+#define GLFW_WIN32_KEYMAP_E0_LEN 1
+#define GLFW_WIN32_KEYMAP_E0_BIT (GLFW_WIN32_KEYMAP_MAKECODE_LEN)
+#define GLFW_WIN32_KEYMAP_E1_LEN 1
+#define GLFW_WIN32_KEYMAP_E1_BIT (GLFW_WIN32_KEYMAP_MAKECODE_LEN + GLFW_WIN32_KEYMAP_E1_LEN)
+#define GLFW_WIN32_KEYMAP_LEN (GLFW_WIN32_KEYMAP_MAKECODE_LEN + GLFW_WIN32_KEYMAP_E0_LEN + GLFW_WIN32_KEYMAP_E1_LEN)
+#define GLFW_WIN32_KEYMAP_MAX_INDEX ((1 << GLFW_WIN32_KEYMAP_LEN) - 1)
+
+#define GLFW_WIN32_CALC_KEYMAP(makeCode, e0, e1) \
+    (((makeCode) & 0xFF)                       | \
+     ((e0) & 0x01) << GLFW_WIN32_KEYMAP_E0_BIT | \
+     ((e1) & 0x01) << GLFW_WIN32_KEYMAP_E1_BIT)
+
+
 // WGL-specific per-context data
 //
 typedef struct _GLFWcontextWGL
@@ -448,7 +468,9 @@ typedef struct _GLFWlibraryWin32
     HDEVNOTIFY          deviceNotificationHandle;
     int                 acquiredMonitorCount;
     char*               clipboardString;
-    short int           keycodes[512];
+    // See definition of GLFW_WIN32_CALC_KEYMAP macro for index structure
+    // TODO(hnosm) possible optimization: the only key that uses E1 is Pause, and we can cut the size of this array by half if we handle it as a dedicated if()
+    short int           keycodes[GLFW_WIN32_KEYMAP_MAX_INDEX + 1];
     short int           scancodes[GLFW_KEY_LAST + 1];
     char                keynames[GLFW_KEY_LAST + 1][5];
     // Where to place the cursor when re-enabled
