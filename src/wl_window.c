@@ -786,6 +786,7 @@ static void handleEvents(double* timeout)
                 for (uint64_t i = 0; i < repeats; i++)
                 {
                     _glfwInputKey(_glfw.wl.keyboardFocus,
+                                  NULL,
                                   _glfw.wl.keyboardLastKey,
                                   _glfw.wl.keyboardLastScancode,
                                   GLFW_PRESS,
@@ -1171,6 +1172,13 @@ void _glfwSetRawMouseMotionWayland(_GLFWwindow *window, GLFWbool enabled)
 GLFWbool _glfwRawMouseMotionSupportedWayland(void)
 {
     return GLFW_TRUE;
+}
+
+GLFWbool _glfwKeyboardsSupportedWayland(void)
+{
+    // NOTE: there doesn't seem to exist a multi-keyboard API for Wayland (each wl_seat object can only have one wl_keyboard object).
+    //       The best approximation is probably implementing it using multiple seats, which requires a lot of joggling around of data, and possibly coordination from the login manager as well
+    return GLFW_FALSE;
 }
 
 void _glfwPollEventsWayland(void)

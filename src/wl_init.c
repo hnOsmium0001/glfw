@@ -566,7 +566,7 @@ static void keyboardHandleKey(void* data,
         state == WL_KEYBOARD_KEY_STATE_PRESSED ? GLFW_PRESS : GLFW_RELEASE;
 
     _glfw.wl.serial = serial;
-    _glfwInputKey(window, key, scancode, action, _glfw.wl.xkb.modifiers);
+    _glfwInputKey(window, NULL, key, scancode, action, _glfw.wl.xkb.modifiers);
 
     struct itimerspec timer = {};
 
@@ -1036,6 +1036,7 @@ GLFWbool _glfwConnectWayland(int platformID, _GLFWplatform* platform)
         _glfwSetCursorModeWayland,
         _glfwSetRawMouseMotionWayland,
         _glfwRawMouseMotionSupportedWayland,
+        _glfwKeyboardsSupportedWayland,
         _glfwCreateCursorWayland,
         _glfwCreateStandardCursorWayland,
         _glfwDestroyCursorWayland,

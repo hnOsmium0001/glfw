@@ -127,6 +127,7 @@ struct wl_shm;
 #define GLFW_WAYLAND_LIBRARY_WINDOW_STATE _GLFWlibraryWayland wl;
 #define GLFW_WAYLAND_MONITOR_STATE        _GLFWmonitorWayland wl;
 #define GLFW_WAYLAND_CURSOR_STATE         _GLFWcursorWayland  wl;
+#define GLFW_WAYLAND_KEYBOARD_STATE
 
 struct wl_cursor_image {
     uint32_t width;
@@ -460,6 +461,8 @@ void _glfwSetWindowMousePassthroughWayland(_GLFWwindow* window, GLFWbool enabled
 
 void _glfwSetRawMouseMotionWayland(_GLFWwindow *window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedWayland(void);
+
+GLFWbool _glfwKeyboardsSupportedWayland(void);
 
 void _glfwPollEventsWayland(void);
 void _glfwWaitEventsWayland(void);
