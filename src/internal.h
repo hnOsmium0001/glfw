@@ -613,7 +613,7 @@ struct _GLFWcursor
 
 struct _GLFWkeyboard
 {
-    char            name[128];
+    char            name[256];
     void*           userPointer;
     // This is defined in platform.h
     GLFW_PLATFORM_KEYBOARD_STATE

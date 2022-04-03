@@ -142,7 +142,7 @@
         GLFW_NULL_CURSOR_STATE \
 
 #define GLFW_PLATFORM_KEYBOARD_STATE \
-        /* TODO(hnosm) unimplemented */ GLFW_WIN32_KEYBOARD_STATE \
+        GLFW_WIN32_KEYBOARD_STATE \
         /* TODO(hnosm) unimplemented */ GLFW_COCOA_KEYBOARD_STATE \
         /* TODO(hnosm) unimplemented */ GLFW_WAYLAND_KEYBOARD_STATE \
         GLFW_X11_KEYBOARD_STATE \

@@ -366,6 +366,7 @@ typedef VkBool32 (APIENTRY *PFN_vkGetPhysicalDeviceWin32PresentationSupportKHR)(
 #define GLFW_WIN32_LIBRARY_WINDOW_STATE _GLFWlibraryWin32 win32;
 #define GLFW_WIN32_MONITOR_STATE        _GLFWmonitorWin32 win32;
 #define GLFW_WIN32_CURSOR_STATE         _GLFWcursorWin32  win32;
+#define GLFW_WIN32_KEYBOARD_STATE       _GLFWkeyboarWin32 win32;
 
 #define GLFW_WGL_CONTEXT_STATE          _GLFWcontextWGL wgl;
 #define GLFW_WGL_LIBRARY_CONTEXT_STATE  _GLFWlibraryWGL wgl;
@@ -522,6 +523,11 @@ typedef struct _GLFWcursorWin32
     HCURSOR             handle;
 } _GLFWcursorWin32;
 
+typedef struct _GLFWkeyboarWin32
+{
+    HANDLE              device;
+} _GLFWkeyboarWin32;
+
 
 GLFWbool _glfwConnectWin32(int platformID, _GLFWplatform* platform);
 int _glfwInitWin32(void);
@@ -578,6 +584,10 @@ void _glfwSetWindowOpacityWin32(_GLFWwindow* window, float opacity);
 
 void _glfwSetRawMouseMotionWin32(_GLFWwindow *window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedWin32(void);
+
+void _glfwPollKeyboardsWin32(void);
+GLFWbool _glfwKeyboardsSupportedWin32(void);
+_GLFWkeyboard* _glfwGetKeyboardFromDeviceWin32(HANDLE device);
 
 void _glfwPollEventsWin32(void);
 void _glfwWaitEventsWin32(void);

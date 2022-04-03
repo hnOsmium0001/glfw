@@ -295,11 +295,13 @@ static void createKeyTables(void)
     _glfw.win32.keycodes[0x038] = GLFW_KEY_LEFT_ALT;
     _glfw.win32.keycodes[0x01D] = GLFW_KEY_LEFT_CONTROL;
     _glfw.win32.keycodes[0x02A] = GLFW_KEY_LEFT_SHIFT;
+    _glfw.win32.keycodes[0x05B] = GLFW_KEY_LEFT_SUPER; // NOTE: RawInput generates this for scancode
     _glfw.win32.keycodes[0x15B] = GLFW_KEY_LEFT_SUPER;
     _glfw.win32.keycodes[0x137] = GLFW_KEY_PRINT_SCREEN;
     _glfw.win32.keycodes[0x138] = GLFW_KEY_RIGHT_ALT;
     _glfw.win32.keycodes[0x11D] = GLFW_KEY_RIGHT_CONTROL;
     _glfw.win32.keycodes[0x036] = GLFW_KEY_RIGHT_SHIFT;
+    _glfw.win32.keycodes[0x05C] = GLFW_KEY_RIGHT_SUPER; // NOTE: RawInput generates this for scancode
     _glfw.win32.keycodes[0x15C] = GLFW_KEY_RIGHT_SUPER;
     _glfw.win32.keycodes[0x150] = GLFW_KEY_DOWN;
     _glfw.win32.keycodes[0x14B] = GLFW_KEY_LEFT;
@@ -560,6 +562,7 @@ GLFWbool _glfwConnectWin32(int platformID, _GLFWplatform* platform)
         _glfwSetCursorModeWin32,
         _glfwSetRawMouseMotionWin32,
         _glfwRawMouseMotionSupportedWin32,
+        _glfwKeyboardsSupportedWin32,
         _glfwCreateCursorWin32,
         _glfwCreateStandardCursorWin32,
         _glfwDestroyCursorWin32,
@@ -652,6 +655,7 @@ int _glfwInitWin32(void)
         return GLFW_FALSE;
 
     _glfwPollMonitorsWin32();
+    _glfwPollKeyboardsWin32();
     return GLFW_TRUE;
 }
 

@@ -740,6 +740,13 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         case WM_KEYUP:
         case WM_SYSKEYUP:
         {
+            // See WM_INPUT
+            // TODO(hnosm) on win32 this is always true?
+#if 1
+            if (_glfwKeyboardsSupportedWin32())
+                break;
+#endif
+
             int key, scancode;
             const int action = (HIWORD(lParam) & KF_UP) ? GLFW_RELEASE : GLFW_PRESS;
             const int mods = getKeyMods();
@@ -812,17 +819,17 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 // HACK: Release both Shift keys on Shift up event, as when both
                 //       are pressed the first release does not emit any event
                 // NOTE: The other half of this is in _glfwPollEventsWin32
-                _glfwInputKey(window, GLFW_KEY_LEFT_SHIFT, scancode, action, mods);
-                _glfwInputKey(window, GLFW_KEY_RIGHT_SHIFT, scancode, action, mods);
+                _glfwInputKey(window, NULL, GLFW_KEY_LEFT_SHIFT, scancode, action, mods);
+                _glfwInputKey(window, NULL, GLFW_KEY_RIGHT_SHIFT, scancode, action, mods);
             }
             else if (wParam == VK_SNAPSHOT)
             {
                 // HACK: Key down is not reported for the Print Screen key
-                _glfwInputKey(window, key, scancode, GLFW_PRESS, mods);
-                _glfwInputKey(window, key, scancode, GLFW_RELEASE, mods);
+                _glfwInputKey(window, NULL, key, scancode, GLFW_PRESS, mods);
+                _glfwInputKey(window, NULL, key, scancode, GLFW_RELEASE, mods);
             }
             else
-                _glfwInputKey(window, key, scancode, action, mods);
+                _glfwInputKey(window, NULL, key, scancode, action, mods);
 
             break;
         }
@@ -931,11 +938,6 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             RAWINPUT* data = NULL;
             int dx, dy;
 
-            if (_glfw.win32.disabledCursorWindow != window)
-                break;
-            if (!window->rawMouseMotion)
-                break;
-
             GetRawInputData(ri, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
             if (size > (UINT) _glfw.win32.rawInputSize)
             {
@@ -955,23 +957,210 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
 
             data = _glfw.win32.rawInput;
-            if (data->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
+            switch (data->header.dwType)
             {
-                dx = data->data.mouse.lLastX - window->win32.lastCursorPosX;
-                dy = data->data.mouse.lLastY - window->win32.lastCursorPosY;
-            }
-            else
-            {
-                dx = data->data.mouse.lLastX;
-                dy = data->data.mouse.lLastY;
+                case RIM_TYPEMOUSE:
+                {
+                    if (_glfw.win32.disabledCursorWindow != window)
+                        break;
+                    if (!window->rawMouseMotion)
+                        break;
+
+                    if (data->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
+                    {
+                        dx = data->data.mouse.lLastX - window->win32.lastCursorPosX;
+                        dy = data->data.mouse.lLastY - window->win32.lastCursorPosY;
+                    }
+                    else
+                    {
+                        dx = data->data.mouse.lLastX;
+                        dy = data->data.mouse.lLastY;
+                    }
+
+                    _glfwInputCursorPos(window,
+                        window->virtualCursorPosX + dx,
+                        window->virtualCursorPosY + dy);
+
+                    window->win32.lastCursorPosX += dx;
+                    window->win32.lastCursorPosY += dy;
+                    break;
+                }
+
+                case RIM_TYPEKEYBOARD:
+                {
+                    //break;
+
+                    // TODO(hnosm) don't report key events when IME filtered the WM_INPUT
+
+                    // NOTE: "scancode" and "MakeCode" are used interchangeably below
+                    // NOTE: "key". "keycode", and "VKey" are used interchangeably below
+
+                    RAWKEYBOARD* dataKbd = &data->data.keyboard;
+
+                    GLFWbool extended = (dataKbd->Flags & RI_KEY_E0) || (dataKbd->Flags & RI_KEY_E1);
+                    int scancode = dataKbd->MakeCode;
+                    int key = _glfw.win32.keycodes[scancode];
+
+                    if (dataKbd->VKey == VK_CONTROL)
+                    {
+                        if (extended)
+                        {
+                            key = GLFW_KEY_RIGHT_CONTROL;
+                        }
+                        else
+                        {
+                            // TODO(hnosm) how do we do this?
+
+#if 0
+                            // NOTE: Alt Gr sends Left Ctrl followed by Right Alt
+                            // HACK: We only want one event for Alt Gr, so if we detect
+                            //       this sequence we discard this Left Ctrl message now
+                            //       and later report Right Alt normally
+                            MSG next;
+                            const DWORD time = GetMessageTime();
+
+                            if (PeekMessageW(&next, NULL, 0, 0, PM_NOREMOVE))
+                            {
+                                if (next.message == WM_KEYDOWN ||
+                                    next.message == WM_SYSKEYDOWN ||
+                                    next.message == WM_KEYUP ||
+                                    next.message == WM_SYSKEYUP)
+                                {
+                                    if (next.wParam == VK_MENU &&
+                                        (HIWORD(next.lParam) & KF_EXTENDED) &&
+                                        next.time == time)
+                                    {
+                                        // Next message is Right Alt down so discard this
+                                        break;
+                                    }
+                                }
+                            }
+#endif
+
+                            // This is a regular Left Ctrl message
+                            key = GLFW_KEY_LEFT_CONTROL;
+                        }
+                    }
+                    else if (dataKbd->VKey == VK_MENU)
+                    {
+                        // NOTE: both alt keys report the same scancode and vkey
+                        if (extended)
+                            key = GLFW_KEY_RIGHT_ALT;
+                        else
+                            key = GLFW_KEY_LEFT_ALT;
+                    }
+
+                    // When PrntScr key is pressed, Windows generates the following messages:
+                    // 1. WM_INPUT; make, MakeCode == 0x02A (LEFT_SHIFT), VKey == 255
+                    // 2. WM_INPUT; make, MakeCode == 0x037 (KP_MULTIPLY), VKey == VK_SNAPSHOT
+                    // 3. WM_INPUT; break, MakeCode == 0x037 (KP_MULTIPLY), VKey == VK_SNAPSHOT
+                    // 4. WM_KEYUP; wParam == VK_SNAPSHOT
+                    // 5. WM_INPUT; break, MakeCode == 0x02A (LEFT_SHIFT), VKey == 255
+
+                    // When Pause key is pressed, Windows generates the following messages:
+                    // 1. WM_INPUT; make, MakeCode == 0x01D (LEFT_CONTROL), VKey == VK_PAUSE
+                    // 2. WM_KEYDOWN; wParam == VK_PAUSE
+                    // 3. WM_INPUT; make, MakeCode == 0x045 (PAUSE), VKey == 255
+                    // 4. WM_INPUT; break, MakeCode == 0x01D (LEFT_CONTROL), VKey == VK_PAUSE
+                    // 5. WM_KEYUP; wParam == VK_PAUSE
+                    // 6. WM_INPUT; break, MakeCode == 0x045 (PAUSE), VKey == 255
+
+                    // When Ctrl+Pause is pressed (omitting the Ctrl messages at the beginning and the end):
+                    // 1. WM_KEYDOWN; wParam == VK_CANCEL
+                    // 2. WM_INPUT; make, MakeCode == 0x046 (SCROLL_LOCK), VKey == VK_CANCEL
+                    // 3. WM_INPUT; break, MakeCode == 0x046 (SCROLL_LOCK), VKey == VK_CANCEL
+                    // 4. WM_KEYUP; wParam == VK_CANCEL
+
+                    // HACK: filter VKey == 255 messages because they are paired with other WM_INPUT messageas
+                    if (dataKbd->VKey == 255)
+                        break;
+
+                    if (dataKbd->VKey == VK_SNAPSHOT)
+                        key = GLFW_KEY_PRINT_SCREEN;
+                    if (dataKbd->VKey == VK_PAUSE)
+                        key = GLFW_KEY_PAUSE;
+                    if (dataKbd->VKey == VK_CANCEL)
+                        key = GLFW_KEY_PAUSE;
+                    // TODO(hnosm) fix this mess
+                    //             currently Ctrl+ScrollLock will be detected as CTRL+PAUSE because that generates 0x046 + VK_CACNEL (0x03) also
+
+                    // NOTE: RI_KEY_MAKE (indicating press) is 0, which means &-ing does nothing, therefore we must check key down/up state using RI_KEY_BREAK (indicating release, is 1) instead
+                    int action = (dataKbd->Flags & RI_KEY_BREAK) ? GLFW_RELEASE : GLFW_PRESS;
+
+                    // TODO(hnosm) original behavior doesn't seem to report caps lock either?
+                    int mods = getKeyMods();
+                    // NOTE: WM_INPUT is fired before WM_KEYDOWN/KEYUP, and before GetKeyState() is updated
+                    // HACK: We manually check each possible combination of key inputs to emulate the behavior of calling GetKeyState() in WM_KEYDOWN/KEYUP
+                    if (key == GLFW_KEY_LEFT_CONTROL)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_CONTROL;
+                        else mods |= GLFW_MOD_CONTROL;
+
+                        if (GetKeyState(VK_RCONTROL) & 0x8000) mods |= GLFW_MOD_CONTROL;
+                    }
+                    else if (key == GLFW_KEY_RIGHT_CONTROL)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_CONTROL;
+                        else mods |= GLFW_MOD_CONTROL;
+
+                        if (GetKeyState(VK_LCONTROL) & 0x8000) mods |= GLFW_MOD_CONTROL;
+                    }
+                    else if (key == GLFW_KEY_LEFT_SHIFT)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_SHIFT;
+                        else mods |= GLFW_MOD_SHIFT;
+
+                        if (GetKeyState(VK_RSHIFT) & 0x8000) mods |= GLFW_MOD_SHIFT;
+                    }
+                    else if (key == GLFW_KEY_RIGHT_SHIFT)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_SHIFT;
+                        else mods |= GLFW_MOD_SHIFT;
+
+                        if (GetKeyState(VK_LSHIFT) & 0x8000) mods |= GLFW_MOD_SHIFT;
+                    }
+                    else if (key == GLFW_KEY_LEFT_ALT)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_ALT;
+                        else mods |= GLFW_MOD_ALT;
+
+                        if (GetKeyState(VK_RMENU) & 0x8000) mods |= GLFW_MOD_ALT;
+                    }
+                    else if (key == GLFW_KEY_RIGHT_ALT)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_ALT;
+                        else mods |= GLFW_MOD_ALT;
+
+                        if (GetKeyState(VK_LMENU) & 0x8000) mods |= GLFW_MOD_ALT;
+                    }
+                    else if (key == GLFW_KEY_LEFT_SUPER)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_SUPER;
+                        else mods |= GLFW_MOD_SUPER;
+
+                        if (GetKeyState(VK_RWIN) & 0x8000) mods |= GLFW_MOD_SUPER;
+                    }
+                    else if (key == GLFW_KEY_RIGHT_SUPER)
+                    {
+                        if (action == GLFW_RELEASE) mods &= ~GLFW_MOD_SUPER;
+                        else mods |= GLFW_MOD_SUPER;
+
+                        if (GetKeyState(VK_LWIN) & 0x8000) mods |= GLFW_MOD_SUPER;
+                    }
+
+                    _GLFWkeyboard* keyboard = _glfwGetKeyboardFromDeviceWin32(data->header.hDevice);
+                    _glfwInputKey(window, keyboard, key, scancode, action, mods);
+                    
+                    break;
+                }
             }
 
-            _glfwInputCursorPos(window,
-                                window->virtualCursorPosX + dx,
-                                window->virtualCursorPosY + dy);
+            break;
+        }
 
-            window->win32.lastCursorPosX += dx;
-            window->win32.lastCursorPosY += dy;
+        case WM_INPUT_DEVICE_CHANGE:
+        {
+            // TODO
             break;
         }
 
@@ -1940,7 +2129,7 @@ void _glfwSetWindowResizableWin32(_GLFWwindow* window, GLFWbool enabled)
 
 void _glfwSetWindowDecoratedWin32(_GLFWwindow* window, GLFWbool enabled)
 {
-    updateWindowStyles(window);
+    updateWindowStyles(window) ;
 }
 
 void _glfwSetWindowFloatingWin32(_GLFWwindow* window, GLFWbool enabled)
@@ -2032,6 +2221,96 @@ GLFWbool _glfwRawMouseMotionSupportedWin32(void)
     return GLFW_TRUE;
 }
 
+void _glfwPollKeyboardsWin32(void)
+{
+    // NOTE: This function is currently only used during startup to collect the initial list of keyboards, it does not handle updating the list of keyboards
+    if (_glfw.keyboardCount != 0)
+        return;
+
+    UINT numDevices = 0;
+    RAWINPUTDEVICELIST* devices = NULL;
+    if (GetRawInputDeviceList(NULL, &numDevices, sizeof(RAWINPUTDEVICELIST)) != 0)
+        goto fail;
+
+    if (numDevices == 0)
+        return;
+    
+    UINT numDevicesSuccessfullyFetched;
+    do
+    {
+        RAWINPUTDEVICELIST* newPtr = _glfw_realloc(devices, sizeof(RAWINPUTDEVICELIST) * numDevices);
+        if (newPtr == NULL)
+            goto fail;
+        else
+            devices = newPtr;
+
+        numDevicesSuccessfullyFetched = GetRawInputDeviceList(devices, &numDevices, sizeof(RAWINPUTDEVICELIST));
+    } while (numDevicesSuccessfullyFetched == (UINT) -1 && GetLastError() == ERROR_INSUFFICIENT_BUFFER);
+
+    if (numDevicesSuccessfullyFetched == (UINT) -1)
+        goto fail;
+
+    for (UINT i = 0;  i < numDevicesSuccessfullyFetched;  i++)
+    {
+        if (devices[i].dwType != RIM_TYPEKEYBOARD)
+            continue;
+
+        HANDLE handle = devices[i].hDevice;
+
+        UINT deviceNameWcharCount;
+        WCHAR* deviceNameWchar;
+
+        GetRawInputDeviceInfoW(handle, RIDI_DEVICENAME, NULL, &deviceNameWcharCount);
+        deviceNameWchar = _glfw_calloc(deviceNameWcharCount, sizeof(WCHAR));
+        GetRawInputDeviceInfoW(handle, RIDI_DEVICENAME, deviceNameWchar, &deviceNameWcharCount);
+
+        {
+            _GLFWkeyboard* keyboard = _glfwAllocKeyboard("Unknown");
+
+            INT length = WideCharToMultiByte(CP_UTF8, 0, deviceNameWchar, deviceNameWcharCount, keyboard->name, sizeof(keyboard->name), NULL, NULL);
+            keyboard->name[length] = '\0';
+            keyboard->win32.device = handle;
+
+            _glfwInputKeyboard(keyboard, GLFW_CONNECTED, _GLFW_INSERT_LAST);
+        }
+
+        free(deviceNameWchar);
+    }
+
+    // Register that we want to receive WM_INPUT for keyboards
+    RAWINPUTDEVICE rid;
+    rid.usUsagePage = 0x01;         // HID_USAGE_PAGE_GENERIC
+    rid.usUsage = 0x06;             // HID_USAGE_GENERIC_KEYBOARD
+    rid.dwFlags = RIDEV_DEVNOTIFY;
+    rid.hwndTarget = 0;
+
+    if (RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE)) == FALSE)
+    {
+        // Failed to register
+        // TODO(hnosm)
+    }
+
+fail:
+    free(devices);
+}
+
+GLFWbool _glfwKeyboardsSupportedWin32(void)
+{
+    // We use RawInput to support multi-keyboard, which requires minimum Windows XP, which is already the minimum version of Windows GLFW supports
+    return GLFW_TRUE;
+}
+
+_GLFWkeyboard* _glfwGetKeyboardFromDeviceWin32(HANDLE device)
+{
+    // TODO(hnosm) overhead too big?
+    for (int i = 0; i < _glfw.keyboardCount; i++)
+    {
+        if (_glfw.keyboards[i]->win32.device == device)
+            return _glfw.keyboards[i];
+    }
+    return NULL;
+}
+
 void _glfwPollEventsWin32(void)
 {
     MSG msg;
@@ -2093,7 +2372,7 @@ void _glfwPollEventsWin32(void)
                 if (window->keys[key] != GLFW_PRESS)
                     continue;
 
-                _glfwInputKey(window, key, scancode, GLFW_RELEASE, getKeyMods());
+                _glfwInputKey(window, NULL, key, scancode, GLFW_RELEASE, getKeyMods());
             }
         }
     }

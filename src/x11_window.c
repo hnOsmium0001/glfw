@@ -2916,9 +2916,9 @@ GLFWbool _glfwRawMouseMotionSupportedX11(void)
 
 void _glfwPollKeyboardsX11(void)
 {
-    // TODO(hnosm) unimplemented
-    //             This function is currently only used during startup to collect the initial list of keyboards
-    assert(_glfw.keyboardCount == 0);
+    // NOTE: This function is currently only used during startup to collect the initial list of keyboards, it does not handle updating the list of keyboards
+    if (_glfw.keyboardCount != 0)
+        return;
 
     if (_glfwKeyboardsSupportedX11())
     {
