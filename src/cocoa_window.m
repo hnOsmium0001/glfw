@@ -575,7 +575,7 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
     const int key = translateKey([event keyCode]);
     const int mods = translateFlags([event modifierFlags]);
 
-    _glfwInputKey(window, key, [event keyCode], GLFW_PRESS, mods);
+    _glfwInputKey(window, NULL, key, [event keyCode], GLFW_PRESS, mods);
 
     [self interpretKeyEvents:@[event]];
 }
@@ -599,14 +599,14 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
     else
         action = GLFW_RELEASE;
 
-    _glfwInputKey(window, key, [event keyCode], action, mods);
+    _glfwInputKey(window, NULL, key, [event keyCode], action, mods);
 }
 
 - (void)keyUp:(NSEvent *)event
 {
     const int key = translateKey([event keyCode]);
     const int mods = translateFlags([event modifierFlags]);
-    _glfwInputKey(window, key, [event keyCode], GLFW_RELEASE, mods);
+    _glfwInputKey(window, NULL, key, [event keyCode], GLFW_RELEASE, mods);
 }
 
 - (void)scrollWheel:(NSEvent *)event
@@ -1397,6 +1397,11 @@ void _glfwSetRawMouseMotionCocoa(_GLFWwindow *window, GLFWbool enabled)
 }
 
 GLFWbool _glfwRawMouseMotionSupportedCocoa(void)
+{
+    return GLFW_FALSE;
+}
+
+GLFWbool _glfwKeyboardsSupportedCocoa(void)
 {
     return GLFW_FALSE;
 }

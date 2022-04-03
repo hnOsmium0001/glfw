@@ -104,6 +104,7 @@ typedef VkResult (APIENTRY *PFN_vkCreateMetalSurfaceEXT)(VkInstance,const VkMeta
 #define GLFW_COCOA_LIBRARY_WINDOW_STATE _GLFWlibraryNS ns;
 #define GLFW_COCOA_MONITOR_STATE        _GLFWmonitorNS ns;
 #define GLFW_COCOA_CURSOR_STATE         _GLFWcursorNS  ns;
+#define GLFW_COCOA_KEYBOARD_STATE
 
 #define GLFW_NSGL_CONTEXT_STATE         _GLFWcontextNSGL nsgl;
 #define GLFW_NSGL_LIBRARY_CONTEXT_STATE _GLFWlibraryNSGL nsgl;
@@ -250,6 +251,8 @@ void _glfwSetWindowMousePassthroughCocoa(_GLFWwindow* window, GLFWbool enabled);
 
 void _glfwSetRawMouseMotionCocoa(_GLFWwindow *window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedCocoa(void);
+
+GLFWbool _glfwKeyboardsSupportedCocoa(void);
 
 void _glfwPollEventsCocoa(void);
 void _glfwWaitEventsCocoa(void);
